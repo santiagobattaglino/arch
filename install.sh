@@ -24,20 +24,20 @@ echo ">>> [1/8] Partitioning the drive: ${SSD_DRIVE}"
 parted ${SSD_DRIVE} --script -- mklabel gpt \
   mkpart "EFI" fat32 1MiB 513MiB \
   set 1 esp on \
-  mkpart "System A" ext4 513MiB 25.5GiB \
-  mkpart "System B" ext4 25.5GiB 50.5GiB \
-  mkpart "Sample Library" ext4 50.5GiB 80.5GiB \
-  mkpart "User Data" ext4 80.5GiB 100%
+  mkpart "SystemA" ext4 513MiB 25.5GiB \
+  mkpart "SystemB" ext4 25.5GiB 50.5GiB \
+  mkpart "SampleLibrary" ext4 50.5GiB 80.5GiB \
+  mkpart "UserData" ext4 80.5GiB 100%
 
 # Short pause to let the kernel recognize new partitions
 sleep 2
 
 # Assign partition variables
-EFI_PART="${SSD_DRIVE}p1"
-SYS_A_PART="${SSD_DRIVE}p2"
-SYS_B_PART="${SSD_DRIVE}p3"
-SAMPLES_PART="${SSD_DRIVE}p4"
-DATA_PART="${SSD_DRIVE}p5"
+EFI_PART="${SSD_DRIVE}1"
+SYS_A_PART="${SSD_DRIVE}2"
+SYS_B_PART="${SSD_DRIVE}3"
+SAMPLES_PART="${SSD_DRIVE}4"
+DATA_PART="${SSD_DRIVE}5"
 
 echo ">>> [2/8] Formatting partitions..."
 mkfs.fat -F32 ${EFI_PART}
