@@ -16,9 +16,6 @@ TIMEZONE="America/Argentina/Buenos_Aires"
 # Stop on any error
 set -e
 
-# Set console keyboard layout to spanish (optional)
-localectl set-keymap es
-
 echo ">>> [1/8] Partitioning the drive: ${SSD_DRIVE}"
 # New layout: EFI, System A, System B, Samples, Data
 parted ${SSD_DRIVE} --script -- mklabel gpt \

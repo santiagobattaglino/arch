@@ -47,17 +47,8 @@ mkinitcpio -P
 # Install reflector
 pacman -S reflector --noconfirm
 
-# Generate a new mirrorlist for Argentina (or closest/fastest)
-# --age 12: mirrors updated in last 12 hours
-# --protocol https: prefer secure connections
-# --sort rate: sort by download speed
-# --save: write to the default mirrorlist file
-reflector --country "Argentina" --age 12 --protocol https --sort rate --save /etc/pacman.d/mirrorlist
-
-# If Argentina mirrors are still slow or don't work, try other regions or worldwide fast mirrors:
-# reflector --country "Chile" --country "Brazil" --age 12 --protocol https --sort rate --save /etc/pacman.d/mirrorlist
-# OR (for general fastest mirrors globally, might include distant ones)
-# reflector --latest 10 --protocol https --sort rate --save /etc/pacman.d/mirrorlist
+# Generate a new mirrorlist
+reflector --latest 10 --protocol https --sort rate --save /etc/pacman.d/mirrorlist
 
 # Synchronize pacman databases with the new mirror list (crucial!)
 pacman -Syy
