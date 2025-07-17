@@ -1,4 +1,5 @@
 # Assign partition variables
+SSD_DRIVE="/dev/sdb"
 EFI_PART="${SSD_DRIVE}1"
 SYS_A_PART="${SSD_DRIVE}2"
 SYS_B_PART="${SSD_DRIVE}3"
