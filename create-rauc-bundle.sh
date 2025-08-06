@@ -20,13 +20,13 @@ cd ~/rauc_bundle_workspace || error_exit "Failed to change to workspace director
 echo "Current working directory: $(pwd)" # Diagnostic: Show current directory
 
 # Step 2: Mount System A's root filesystem (read-only).
-# This is your source for the SquashFS image.
+# This is your source for the image.
 echo "Mounting System A (/dev/sda2) as read-only source..."
 mkdir -p /mnt/source_systemA || error_exit "Failed to create /mnt/source_systemA mount point."
 mount -o ro /dev/sda2 /mnt/source_systemA || error_exit "Failed to mount /dev/sda2 to /mnt/source_systemA. Ensure /dev/sda2 exists and is not already mounted."
 
 # Step 3: Create the SquashFS image of System A's root filesystem.
-# This will be a clean, consistent image.
+# This will create a compressed SquashFS image of your System A.
 echo "Checking for existing rootfs_systemA.squashfs..."
 if [[ -f "rootfs_systemA.squashfs" && -s "rootfs_systemA.squashfs" ]]; then
     echo "rootfs_systemA.squashfs already exists and is not empty. Skipping mksquashfs."
@@ -44,7 +44,7 @@ if [[ ! -s "rootfs_systemA.squashfs" ]]; then
     error_exit "rootfs_systemA.squashfs was created but is EMPTY. Check mksquashfs output for errors."
 fi
 echo "rootfs_systemA.squashfs created successfully and is not empty."
-echo "Files in current directory after mksquashfs:" # Diagnostic: List files after mksquashfs
+echo "Files in current directory after mksquashfs:" # Diagnostic: List files
 ls -l
 # --- End Diagnostic ---
 
@@ -66,6 +66,7 @@ echo "Calculated Size: $SQUASHFS_SIZE"
 printf '[rauc]\ncompatible=Arch-Linux\nversion=1.0.0\n' > rauc.conf || error_exit "Failed to create rauc.conf."
 
 # Step 7: Create the RAUC manifest file (`manifest.raucm`).
+# IMPORTANT: The filename here now refers to the .squashfs file.
 printf '[update]\ncompatible=Arch-Linux\nversion=1.0.0\n\n[image.rootfs]\nfilename=rootfs_systemA.squashfs\nsha256=%s\nsize=%s\n' "$SQUASHFS_SHA256" "$SQUASHFS_SIZE" > manifest.raucm || error_exit "Failed to create manifest.raucm."
 
 echo "Manifest created. Verifying its content:"
@@ -84,11 +85,9 @@ echo "--- End Diagnostic ---"
 
 # Step 8: Build the RAUC bundle.
 echo "Attempting to build RAUC bundle..."
-# Explicitly passing manifest and image file to rauc bundle
+# The '.' argument tells RAUC to look for manifest.raucm, rauc.conf, and images in the current directory.
 rauc bundle --key=private.key --cert=certificate.pem \
- --manifest=manifest.raucm \
- --output=systemA_bundle_v1.0.0.raucb \
- rootfs_systemA.squashfs || error_exit "Failed to build RAUC bundle. Check RAUC output above for details."
+ --output=systemA_bundle_v1.0.0.raucb . || error_exit "Failed to build RAUC bundle. Check RAUC output above for details."
 
 # Step 9: Verify the created bundle.
 echo "Verifying the created bundle..."
