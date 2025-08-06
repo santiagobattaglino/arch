@@ -83,32 +83,40 @@ cat manifest.raucm
 echo "--- End Diagnostic ---"
 # --- End Diagnostic ---
 
-# Step 8: Manually build the RAUC bundle using `tar`.
-echo "Attempting to manually build RAUC bundle using tar..."
+# Step 8: Manually build the RAUC bundle using `tar` (unsigned).
+echo "Attempting to manually build RAUC bundle using tar (unsigned)..."
 # Create a temporary directory for the tar contents
 mkdir bundle_contents || error_exit "Failed to create bundle_contents directory."
 
-# Copy all necessary files into the bundle_contents directory
+# Copy all necessary files into the bundle_contents directory (excluding certificate.pem for now)
 cp rauc.conf bundle_contents/ || error_exit "Failed to copy rauc.conf."
 cp manifest.raucm bundle_contents/ || error_exit "Failed to copy manifest.raucm."
 cp rootfs_systemA.squashfs bundle_contents/ || error_exit "Failed to copy rootfs_systemA.squashfs."
-cp certificate.pem bundle_contents/ || error_exit "Failed to copy certificate.pem."
 
 # Now, create the tar archive from the bundle_contents directory
 # The -C bundle_contents tells tar to change directory before archiving.
 # The '.' tells tar to archive the contents of the current directory (which is bundle_contents).
 tar -cvf systemA_bundle_v1.0.0.raucb -C bundle_contents . || error_exit "Failed to create tar bundle."
+echo "Unsigned bundle created."
 
-# Step 9: Sign the created bundle using `rauc sign-bundle`.
-# This is a separate step because we manually created the tar archive.
-echo "Signing the created RAUC bundle..."
-rauc sign-bundle systemA_bundle_v1.0.0.raucb --key=private.key --cert=certificate.pem || error_exit "Failed to sign RAUC bundle."
+# Step 9: Manually sign the manifest using `openssl`.
+# This creates a PKCS#7 detached signature of the manifest.
+echo "Manually signing the manifest using openssl..."
+openssl cms -sign -in manifest.raucm -signer certificate.pem -inkey private.key -nodetach -outform DER -out signature.p7s || error_exit "Failed to sign manifest with openssl."
+echo "Manifest signed. Signature file: signature.p7s"
 
-# Step 10: Verify the created bundle.
+# Step 10: Add the signature file to the created bundle.
+# RAUC expects the signature file to be named 'signature.p7s' at the root of the bundle.
+echo "Adding signature.p7s to the bundle..."
+tar -rvf systemA_bundle_v1.0.0.raucb signature.p7s || error_exit "Failed to add signature to bundle."
+echo "Signature added to bundle."
+
+# Step 11: Verify the created bundle.
+# This should now succeed as the bundle is correctly signed and structured.
 echo "Verifying the created bundle..."
-rauc info systemA_bundle_v1.0.0.raucb || error_exit "Failed to verify RAUC bundle."
+rauc info systemA_bundle_v1.0.0.raucb || error_exit "Failed to verify RAUC bundle after signing."
 
-# Step 11: Move the completed bundle to System A's /home directory.
+# Step 12: Move the completed bundle to System A's /home directory.
 # This makes it accessible from your main system for installation.
 echo "Moving completed bundle to System A's /home directory..."
 # Assuming /home is on /dev/sda5 (your LUKS partition) and it's currently unmounted.
@@ -126,7 +134,7 @@ umount /mnt/system_a_home || echo "WARNING: Failed to unmount /mnt/system_a_home
 rmdir /mnt/system_a_home || echo "WARNING: Failed to remove /mnt/system_a_home directory. Manual cleanup may be needed."
 cryptsetup luksClose "$LUKS_MAPPER_NAME" || echo "WARNING: Failed to close LUKS device. Manual close may be needed."
 
-# Step 12: Clean up the temporary directory on the build server.
+# Step 13: Clean up the temporary directory on the build server.
 echo "Cleaning up temporary directory on build server..."
 cd ~
 rm -rf ~/rauc_bundle_workspace || echo "WARNING: Failed to remove ~/rauc_bundle_workspace. Manual cleanup may be needed."
