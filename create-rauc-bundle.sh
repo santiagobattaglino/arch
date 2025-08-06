@@ -81,13 +81,15 @@ stat -c %s rootfs_systemA.squashfs
 echo "Content of manifest.raucm:"
 cat manifest.raucm
 echo "--- End Diagnostic ---"
-# --- End Diagnostic Block ---
+# --- End Diagnostic ---
 
 # Step 8: Build the RAUC bundle.
-echo "Attempting to build RAUC bundle..."
-# The '.' argument tells RAUC to look for manifest.raucm, rauc.conf, and images in the current directory.
-rauc bundle --key=private.key --cert=certificate.pem \
- --output=systemA_bundle_v1.0.0.raucb . || error_exit "Failed to build RAUC bundle. Check RAUC output above for details."
+echo "Attempting to build RAUC bundle with adjusted syntax..."
+# Using the usage: rauc bundle <inputdir> <bundlename> [options]
+# The '.' is the <inputdir> (current directory).
+# 'systemA_bundle_v1.0.0.raucb' is the <bundlename>.
+# --key and --cert are the [options].
+rauc bundle . systemA_bundle_v1.0.0.raucb --key=private.key --cert=certificate.pem || error_exit "Failed to build RAUC bundle. Check RAUC output above for details."
 
 # Step 9: Verify the created bundle.
 echo "Verifying the created bundle..."
