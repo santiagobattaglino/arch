@@ -10,33 +10,27 @@ KEY="private.key"
 CERT="certificate.pem"
 RECIPE="bundle.raucb"
 SQUASHFS="rootfs_systemA.squashfs"
+SQUASHFS_PATH="$BUILD_DIR/$SQUASHFS"
 
-# === CLEANUP ===
-echo "🔄 Cleaning workspace..."
+# === CLEANUP (WITHOUT TOUCHING SQUASHFS) ===
+echo "🔄 Preparing workspace..."
 umount "$MNT_POINT" 2>/dev/null || true
-rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 mkdir -p "$MNT_POINT"
 
-# === MOUNT SYSTEM A ROOT (READ-ONLY) ===
-echo "🗂️ Mounting $SRC_PARTITION as read-only..."
-mount -o ro "$SRC_PARTITION" "$MNT_POINT"
-
-# === CHECK IF SQUASHFS ALREADY EXISTS ===
-if [[ -s "$BUILD_DIR/$SQUASHFS" ]]; then
-    echo "✅ Existing SquashFS found: $BUILD_DIR/$SQUASHFS"
-    echo "⏩ Skipping mksquashfs step."
+# === CREATE SQUASHFS ONLY IF MISSING ===
+if [[ -s "$SQUASHFS_PATH" ]]; then
+    echo "✅ Existing SquashFS found: $SQUASHFS_PATH"
+    echo "⏩ Skipping mksquashfs."
 else
-    echo "📦 Creating squashfs image..."
-    mksquashfs "$MNT_POINT" "$BUILD_DIR/$SQUASHFS" -comp xz
+    echo "📦 Creating squashfs image from $SRC_PARTITION..."
+    mount -o ro "$SRC_PARTITION" "$MNT_POINT"
+    mksquashfs "$MNT_POINT" "$SQUASHFS_PATH" -comp xz
+    umount "$MNT_POINT"
 fi
 
-# === UNMOUNT SYSTEM A ===
-echo "🚪 Unmounting $SRC_PARTITION..."
-umount "$MNT_POINT"
-
 # === COPY CERT/KEY TO WORKSPACE ===
-echo "🔐 Copying certificate and key to workspace..."
+echo "🔐 Copying certificate and key..."
 cp "$KEY" "$CERT" "$BUILD_DIR/"
 
 # === CREATE BUNDLE RECIPE ===
