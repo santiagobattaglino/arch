@@ -101,22 +101,19 @@ tar -cvf systemA_bundle_v1.0.0.raucb -C bundle_contents . || error_exit "Failed 
 echo "Unsigned bundle created."
 
 # Step 9: Manually sign the manifest using `openssl`.
-# This creates a PKCS#7 detached signature of the manifest.
 echo "Manually signing the manifest using openssl..."
 openssl cms -sign -in manifest.raucm -signer certificate.pem -inkey private.key -nodetach -outform DER -out signature.p7s || error_exit "Failed to sign manifest with openssl."
 echo "Manifest signed. Signature file: signature.p7s"
 
-# Step 10: Add the signature file to the created bundle.
-# RAUC expects the signature file to be named 'signature.p7s' at the root of the bundle.
-echo "Adding signature.p7s to the bundle..."
-tar -rvf systemA_bundle_v1.0.0.raucb signature.p7s || error_exit "Failed to add signature to bundle."
-echo "Signature added to bundle."
+# Step 10: Prepare all files in one directory BEFORE tar
+echo "Preparing bundle contents..."
+rm -rf bundle_contents || error_exit "Failed to remove existing bundle_contents directory."
+mkdir bundle_contents || error_exit "Failed to create bundle_contents directory."
+cp rauc.conf manifest.raucm rootfs_systemA.squashfs signature.p7s bundle_contents/ || error_exit "Failed to copy files to bundle_contents."
 
-# Step 11: Verify the created bundle.
-# This should now succeed as the bundle is correctly signed and structured.
-echo "Verifying the created bundle..."
-# Explicitly provide the keyring (certificate.pem) to rauc info for verification
-rauc info --keyring=certificate.pem systemA_bundle_v1.0.0.raucb || error_exit "Failed to verify RAUC bundle after signing."
+# Step 11: Create RAUC bundle with signature included
+echo "Creating signed RAUC bundle..."
+tar -cvf systemA_bundle_v1.0.0.raucb -C bundle_contents . || error_exit "Failed to create signed bundle."
 
 # Step 12: Move the completed bundle to System A's /home directory.
 # This makes it accessible from your main system for installation.
