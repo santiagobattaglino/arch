@@ -1,21 +1,46 @@
 # These commands are to be executed from a **NEW, separate Arch Linux Live USB environment**.
 # You are logged in as root, so 'sudo' is not needed unless explicitly stated for specific commands.
 
+# Function to display error messages and exit
+error_exit() {
+    echo "ERROR: $1" >&2
+    echo "Exiting script."
+    exit 1
+}
+
+# Function to check if a command exists
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
 # Step 0: Initial Setup (in Live USB environment)
 echo "Verifying internet connection..."
 ping -c 3 archlinux.org || { echo "ERROR: No internet connection. Please connect to the internet."; exit 1; }
 echo "Setting console keyboard layout to Spanish (es)..."
 loadkeys es # Set to 'es' for Spanish keyboard layout.
 
-# Step 1: Partition /dev/sdb for UEFI.
-# We'll create two partitions:
+# Install sgdisk if not present (part of gptfdisk package)
+if ! command_exists sgdisk; then
+    echo "sgdisk not found. Installing gptfdisk..."
+    pacman -Sy --noconfirm gptfdisk || error_exit "Failed to install gptfdisk (sgdisk)."
+fi
+
+# Step 1: Partition /dev/sdb for UEFI using sgdisk (unattended).
+# This will create two partitions:
 # /dev/sdb1: EFI System Partition (ESP) - ~512MB, FAT32
 # /dev/sdb2: Root partition for Arch Linux - remaining space, Ext4
-echo "Starting partitioning of /dev/sdb. ALL DATA ON /dev/sdb WILL BE ERASED!"
-echo "Use 'g' for GPT (new partition table), 'n' for new partition, 't' for type, 'L' for list codes, 'w' to write changes."
-echo "For /dev/sdb1 (ESP): Type 't', then '1', then 'ef00' (EFI System)."
-echo "For /dev/sdb2 (Root): Type 't', then '2', then '8300' (Linux filesystem)."
-fdisk /dev/sdb || { echo "ERROR: fdisk failed. Check disk name."; exit 1; }
+echo "Starting unattended partitioning of /dev/sdb. ALL DATA ON /dev/sdb WILL BE ERASED!"
+echo "Wiping existing partition table on /dev/sdb..."
+sgdisk -Z /dev/sdb || error_exit "Failed to wipe partition table on /dev/sdb."
+
+echo "Creating EFI System Partition (/dev/sdb1)..."
+sgdisk -n 1:0:+512MiB -t 1:ef00 -c 1:"EFI System Partition" /dev/sdb || error_exit "Failed to create ESP."
+
+echo "Creating Arch Linux Root Partition (/dev/sdb2)..."
+sgdisk -n 2:0:0 -t 2:8300 -c 2:"Arch Linux Root" /dev/sdb || error_exit "Failed to create root partition."
+
+echo "Partitioning complete. Verifying new partition table:"
+sgdisk -p /dev/sdb
 
 # Step 2: Format the new partitions.
 echo "Formatting /dev/sdb1 (ESP) as FAT32..."
