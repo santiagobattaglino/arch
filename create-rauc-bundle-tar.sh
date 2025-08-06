@@ -115,7 +115,8 @@ echo "Signature added to bundle."
 # Step 11: Verify the created bundle.
 # This should now succeed as the bundle is correctly signed and structured.
 echo "Verifying the created bundle..."
-rauc info systemA_bundle_v1.0.0.raucb || error_exit "Failed to verify RAUC bundle after signing."
+# Explicitly provide the keyring (certificate.pem) to rauc info for verification
+rauc info --keyring=certificate.pem systemA_bundle_v1.0.0.raucb || error_exit "Failed to verify RAUC bundle after signing."
 
 # Step 12: Move the completed bundle to System A's /home directory.
 # This makes it accessible from your main system for installation.
