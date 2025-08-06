@@ -62,3 +62,4 @@ rauc info --keyring="$CERT" "$BUNDLE_NAME"
 echo ""
 echo "✅ RAUC bundle created and verified successfully!"
 echo "   → $BUILD_DIR/$BUNDLE_NAME"
+
