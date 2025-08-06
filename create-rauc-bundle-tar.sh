@@ -85,7 +85,8 @@ echo "--- End Diagnostic ---"
 
 # Step 8: Manually build the RAUC bundle using `tar` (unsigned).
 echo "Attempting to manually build RAUC bundle using tar (unsigned)..."
-# Create a temporary directory for the tar contents
+# Clean up the bundle_contents directory if it exists, then create it.
+rm -rf bundle_contents || error_exit "Failed to remove existing bundle_contents directory."
 mkdir bundle_contents || error_exit "Failed to create bundle_contents directory."
 
 # Copy all necessary files into the bundle_contents directory (excluding certificate.pem for now)
