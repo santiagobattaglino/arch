@@ -17,6 +17,7 @@ error_exit() {
 echo "Creating bundle creation directory..."
 mkdir -p ~/rauc_bundle_workspace || error_exit "Failed to create ~/rauc_bundle_workspace."
 cd ~/rauc_bundle_workspace || error_exit "Failed to change to workspace directory: ~/rauc_bundle_workspace. Check permissions or if directory exists."
+echo "Current working directory: $(pwd)" # Diagnostic: Show current directory
 
 # Step 2: Mount System A's root filesystem (read-only).
 # This is your source for the SquashFS image.
@@ -26,8 +27,13 @@ mount -o ro /dev/sda2 /mnt/source_systemA || error_exit "Failed to mount /dev/sd
 
 # Step 3: Create the SquashFS image of System A's root filesystem.
 # This will be a clean, consistent image.
-echo "Creating SquashFS image of System A (this may take a while)..."
-mksquashfs /mnt/source_systemA rootfs_systemA.squashfs -comp xz || error_exit "Failed to create SquashFS image. Check mksquashfs output above for details."
+echo "Checking for existing rootfs_systemA.squashfs..."
+if [[ -f "rootfs_systemA.squashfs" && -s "rootfs_systemA.squashfs" ]]; then
+    echo "rootfs_systemA.squashfs already exists and is not empty. Skipping mksquashfs."
+else
+    echo "Creating SquashFS image of System A (this may take a while)..."
+    mksquashfs /mnt/source_systemA rootfs_systemA.squashfs -comp xz || error_exit "Failed to create SquashFS image. Check mksquashfs output above for details."
+fi
 
 # --- Diagnostic: Verify SquashFS file creation ---
 echo "Verifying creation of rootfs_systemA.squashfs..."
@@ -38,6 +44,8 @@ if [[ ! -s "rootfs_systemA.squashfs" ]]; then
     error_exit "rootfs_systemA.squashfs was created but is EMPTY. Check mksquashfs output for errors."
 fi
 echo "rootfs_systemA.squashfs created successfully and is not empty."
+echo "Files in current directory after mksquashfs:" # Diagnostic: List files after mksquashfs
+ls -l
 # --- End Diagnostic ---
 
 # Step 4: Generate a signing key and certificate.
@@ -76,8 +84,11 @@ echo "--- End Diagnostic ---"
 
 # Step 8: Build the RAUC bundle.
 echo "Attempting to build RAUC bundle..."
+# Explicitly passing manifest and image file to rauc bundle
 rauc bundle --key=private.key --cert=certificate.pem \
- . systemA_bundle_v1.0.0.raucb || error_exit "Failed to build RAUC bundle. Check RAUC output above for details."
+ --manifest=manifest.raucm \
+ --output=systemA_bundle_v1.0.0.raucb \
+ rootfs_systemA.squashfs || error_exit "Failed to build RAUC bundle. Check RAUC output above for details."
 
 # Step 9: Verify the created bundle.
 echo "Verifying the created bundle..."
