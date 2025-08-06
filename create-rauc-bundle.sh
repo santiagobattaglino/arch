@@ -14,14 +14,14 @@ SQUASHFS="rootfs_systemA.squashfs"
 
 # === CLEANUP ===
 echo "🔄 Cleaning previous workspace..."
-sudo umount "$MNT_POINT" 2>/dev/null || true
+umount "$MNT_POINT" 2>/dev/null || true
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 mkdir -p "$MNT_POINT"
 
 # === MOUNT SYSTEM A ROOT (read-only) ===
 echo "🗂️ Mounting $SRC_PARTITION to $MNT_POINT..."
-sudo mount -o ro "$SRC_PARTITION" "$MNT_POINT"
+mount -o ro "$SRC_PARTITION" "$MNT_POINT"
 
 # === CREATE SQUASHFS IMAGE ===
 echo "📦 Creating squashfs image from System A..."
@@ -29,7 +29,7 @@ mksquashfs "$MNT_POINT" "$BUILD_DIR/$SQUASHFS" -comp xz
 
 # === UNMOUNT CLEANLY ===
 echo "🚪 Unmounting $SRC_PARTITION..."
-sudo umount "$MNT_POINT"
+umount "$MNT_POINT"
 
 # === COPY CERT/KEY ===
 echo "🔐 Copying signing cert and key..."
