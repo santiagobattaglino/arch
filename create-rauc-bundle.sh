@@ -1,5 +1,4 @@
 #!/bin/bash
-
 set -e
 
 # === CONFIG ===
@@ -13,53 +12,57 @@ RECIPE="bundle.raucb"
 SQUASHFS="rootfs_systemA.squashfs"
 
 # === CLEANUP ===
-echo "🔄 Cleaning previous workspace..."
+echo "🔄 Cleaning workspace..."
 umount "$MNT_POINT" 2>/dev/null || true
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 mkdir -p "$MNT_POINT"
 
-# === MOUNT SYSTEM A ROOT (read-only) ===
-echo "🗂️ Mounting $SRC_PARTITION to $MNT_POINT..."
+# === MOUNT SYSTEM A ROOT (READ-ONLY) ===
+echo "🗂️ Mounting $SRC_PARTITION as read-only..."
 mount -o ro "$SRC_PARTITION" "$MNT_POINT"
 
-# === CREATE SQUASHFS IMAGE ===
-echo "📦 Creating squashfs image from System A..."
-mksquashfs "$MNT_POINT" "$BUILD_DIR/$SQUASHFS" -comp xz
+# === CHECK IF SQUASHFS ALREADY EXISTS ===
+if [[ -s "$BUILD_DIR/$SQUASHFS" ]]; then
+    echo "✅ Existing SquashFS found: $BUILD_DIR/$SQUASHFS"
+    echo "⏩ Skipping mksquashfs step."
+else
+    echo "📦 Creating squashfs image..."
+    mksquashfs "$MNT_POINT" "$BUILD_DIR/$SQUASHFS" -comp xz
+fi
 
-# === UNMOUNT CLEANLY ===
+# === UNMOUNT SYSTEM A ===
 echo "🚪 Unmounting $SRC_PARTITION..."
 umount "$MNT_POINT"
 
-# === COPY CERT/KEY ===
-echo "🔐 Copying signing cert and key..."
+# === COPY CERT/KEY TO WORKSPACE ===
+echo "🔐 Copying certificate and key to workspace..."
 cp "$KEY" "$CERT" "$BUILD_DIR/"
 
 # === CREATE BUNDLE RECIPE ===
-echo "📝 Generating RAUC bundle recipe..."
+echo "📝 Writing RAUC bundle recipe..."
 cat > "$BUILD_DIR/$RECIPE" <<EOF
 [bundle]
 version=1.0.0
 compatible=Arch-Linux
 cert=$CERT
 key=$KEY
-output=$BUNDLE_NAME
+output=$(realpath "$BUILD_DIR/$BUNDLE_NAME")
 
 [image.rootfs]
 filename=$SQUASHFS
 EOF
 
 # === BUILD THE BUNDLE ===
+echo "🛠️ Building RAUC bundle..."
 cd "$BUILD_DIR"
-echo "🛠️ Building RAUC bundle using 'rauc bundle'..."
 rauc bundle "$RECIPE"
 
 # === VERIFY THE BUNDLE ===
-echo "🔍 Verifying generated bundle with 'rauc info'..."
+echo "🔍 Verifying RAUC bundle..."
 rauc info --keyring="$CERT" "$BUNDLE_NAME"
 
 # === DONE ===
 echo ""
 echo "✅ RAUC bundle created and verified successfully!"
-echo "   → $BUILD_DIR/$BUNDLE_NAME"
-
+echo "   → Location: $BUILD_DIR/$BUNDLE_NAME"
