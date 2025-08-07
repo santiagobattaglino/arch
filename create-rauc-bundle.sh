@@ -4,7 +4,7 @@ set -e
 
 # === CONFIGURATION ===
 BUILD_DIR="/root/rauc_bundle_workspace"
-OUTPUT_DIR="/root/rauc_bundle_workspace"
+OUTPUT_DIR="/root/rauc_output"
 SRC_MOUNT="/mnt/source_systemA"
 SQUASHFS="$BUILD_DIR/rootfs_systemA.squashfs"
 BUNDLE="$OUTPUT_DIR/systemA_bundle_v1.0.0.raucb"
