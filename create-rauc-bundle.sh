@@ -80,19 +80,21 @@ EOF
 # === Step 8: Clean any old bundle first ===
 rm -f "$BUNDLE"
 
-# === Step 9.5: Deep pre-bundle debug digest check ===
-echo "🔬 DEBUG: manifest + squashfs pre-bundle consistency check..."
-echo "--- manifest.raucm ---"
-cat manifest.raucm
+# === Step 9.5: Debug - squashfs and manifest state ===
+{
+    echo "🔬 DEBUG: manifest + squashfs pre-bundle consistency check..."
+    echo "--- manifest.raucm ---"
+    cat manifest.raucm
 
-echo "--- sha256sum squashfs ---"
-sha256sum "$SQUASHFS"
+    echo "--- sha256sum squashfs ---"
+    sha256sum "$SQUASHFS"
 
-echo "--- stat squashfs ---"
-stat "$SQUASHFS"
+    echo "--- stat squashfs ---"
+    stat "$SQUASHFS"
 
-echo "--- hexdump squashfs head ---"
-hexdump -C "$SQUASHFS" | head -n 8
+    echo "--- hexdump squashfs head ---"
+    hexdump -C "$SQUASHFS" | head -n 8
+} || echo "⚠️ Debug section failed, continuing..."
 
 # === Step 10: Create signed bundle with workdir ===
 echo "🔐 Building signed bundle..."
