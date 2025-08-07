@@ -35,13 +35,16 @@ cp "$KEY" "$CERT" "$BUILD_DIR/"
 
 # === CREATE BUNDLE RECIPE ===
 echo "📝 Writing RAUC bundle recipe..."
+
+BUNDLE_OUT="$(realpath "$BUILD_DIR/$BUNDLE_NAME")"
+
 cat > "$BUILD_DIR/$RECIPE" <<EOF
 [bundle]
 version=1.0.0
 compatible=Arch-Linux
 cert=$CERT
 key=$KEY
-output=$(realpath "$BUILD_DIR/$BUNDLE_NAME")
+output=$BUNDLE_OUT
 
 [image.rootfs]
 filename=$SQUASHFS
