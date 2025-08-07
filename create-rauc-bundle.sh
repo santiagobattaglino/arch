@@ -9,9 +9,8 @@ SQUASHFS="$BUILD_DIR/rootfs_systemA.squashfs"
 BUNDLE="$OUTPUT_DIR/systemA_bundle_v1.0.0.raucb"
 CERT="$BUILD_DIR/certificate.pem"
 KEY="$BUILD_DIR/private.key"
-WORKDIR="$BUILD_DIR/.rauc-workdir"
 
-mkdir -p "$BUILD_DIR" "$OUTPUT_DIR" "$WORKDIR"
+mkdir -p "$BUILD_DIR" "$OUTPUT_DIR"
 
 # === Step 1: Mount System A source if not mounted ===
 if ! mountpoint -q "$SRC_MOUNT"; then
@@ -96,12 +95,11 @@ rm -f "$BUNDLE"
     hexdump -C "$SQUASHFS" | head -n 8
 } || echo "⚠️ Debug section failed, continuing..."
 
-# === Step 10: Create signed bundle with workdir ===
+# === Step 10: Create signed bundle ===
 echo "🔐 Building signed bundle..."
 RAUC_LOG_LEVEL=debug rauc bundle \
     --cert="$CERT" \
     --key="$KEY" \
-    --workdir="$WORKDIR" \
     "$BUILD_DIR" "$BUNDLE"
 
 # === Step 11: Verify signed bundle ===
