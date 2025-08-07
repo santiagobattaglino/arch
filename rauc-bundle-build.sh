@@ -11,7 +11,7 @@ KEY=key.pem
 DEVICE=/dev/sda2
 IMG_NAME=rootfs_systemA.ext4
 BUNDLE_OUTPUT="$WORKDIR/$BUNDLE_NAME"
-MOUNT_SIZE_MB=1024  # Adjust this based on the size of your rootfs
+COPY_SIZE=25G
 
 # === SETUP ===
 echo "📁 Creating workspace..."
@@ -19,9 +19,9 @@ rm -rf "$WORKDIR"
 mkdir -p "$IMAGEDIR" "$BUNDLEDIR"
 
 # === CREATE ROOTFS IMAGE ===
-echo "💽 Creating raw ext4 image from $DEVICE..."
+echo "💽 Creating raw ext4 image from $DEVICE (size: $COPY_SIZE)..."
 IMG_PATH="$IMAGEDIR/$IMG_NAME"
-dd if="$DEVICE" of="$IMG_PATH" bs=1M count=$MOUNT_SIZE_MB status=progress
+dd if="$DEVICE" of="$IMG_PATH" bs=1M count=$((25*1024)) status=progress conv=sparse
 
 # === GENERATE rauc.conf ===
 echo "⚙️  Creating rauc.conf..."
@@ -47,7 +47,7 @@ sha256=$SHA256
 size=$SIZE
 EOF
 
-# === COPY ROOTFS IMAGE ===
+# === COPY IMAGE ===
 cp "$IMG_PATH" "$BUNDLEDIR/"
 
 # === KEY + CERT ===
