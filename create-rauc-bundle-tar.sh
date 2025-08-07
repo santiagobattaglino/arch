@@ -1,71 +1,63 @@
 #!/bin/bash
-
 set -e
 
 # === CONFIG ===
-BUNDLE_NAME="systemA_bundle_v1.0.0.raucb"
 WORK_DIR=~/rauc_bundle_workspace
-SRC_PARTITION="/dev/sda2"  # System A root
-MNT_SRC="/mnt/source_systemA"
-KEY="private.key"
-CERT="certificate.pem"
+MOUNT_POINT=/mnt/source_systemA
+SQUASHFS_IMG=$WORK_DIR/rootfs_systemA.squashfs
+BUNDLE_NAME=systemA_bundle_v1.0.0.raucb
 
-# === CLEAN SETUP ===
-echo "Preparing workspace..."
-rm -rf "$WORK_DIR"
+# === CREATE WORKDIR ===
 mkdir -p "$WORK_DIR"
-mkdir -p "$MNT_SRC"
-
-# === MOUNT SYSTEM A PARTITION ===
-echo "Mounting System A root..."
-mount -o ro "$SRC_PARTITION" "$MNT_SRC"
-
-# === CREATE SQUASHFS IMAGE ===
-echo "Creating SquashFS image..."
-mksquashfs "$MNT_SRC" "$WORK_DIR/rootfs_systemA.squashfs" -comp xz
-
-# === UNMOUNT CLEANLY ===
-umount "$MNT_SRC"
-rmdir "$MNT_SRC"
-
-# === GENERATE CONFIG AND MANIFEST ===
 cd "$WORK_DIR"
 
-echo "Generating rauc.conf..."
-cat > rauc.conf <<EOF
-[rauc]
-compatible=Arch-Linux
-version=1.0.0
-EOF
+# === Step 1: Mount systemA rootfs if not mounted ===
+if ! mountpoint -q "$MOUNT_POINT"; then
+    mkdir -p "$MOUNT_POINT"
+    mount -o ro /dev/sda2 "$MOUNT_POINT"
+fi
 
-echo "Calculating SHA256 and size..."
-SHA256=$(sha256sum rootfs_systemA.squashfs | awk '{print $1}')
-SIZE=$(stat -c %s rootfs_systemA.squashfs)
+# === Step 2: Create squashfs if it doesn't exist ===
+if [[ -s "$SQUASHFS_IMG" ]]; then
+    echo "✅ SquashFS image already exists. Skipping creation."
+else
+    echo "🌀 Creating SquashFS image..."
+    mksquashfs "$MOUNT_POINT" "$SQUASHFS_IMG" -comp xz -noappend
+fi
 
-echo "Generating manifest.raucm..."
+# === Step 3: Create keys (if needed) ===
+if [[ ! -f private.key || ! -f certificate.pem ]]; then
+    echo "🔐 Generating keys..."
+    openssl genpkey -algorithm RSA -out private.key
+    openssl req -x509 -new -key private.key -out certificate.pem -days 365 -subj "/CN=RAUC Test"
+fi
+
+# === Step 4: Generate manifest.raucm ===
+SHA256=$(sha256sum "$SQUASHFS_IMG" | awk '{print $1}')
+SIZE=$(stat -c%s "$SQUASHFS_IMG")
+
 cat > manifest.raucm <<EOF
 [update]
 compatible=Arch-Linux
 version=1.0.0
 
 [image.rootfs]
-filename=rootfs_systemA.squashfs
+filename=$(basename "$SQUASHFS_IMG")
 sha256=$SHA256
 size=$SIZE
 EOF
 
-# === SIGN MANIFEST ===
-echo "Signing manifest..."
-openssl cms -sign \
-    -in manifest.raucm \
-    -signer "$CERT" \
-    -inkey "$KEY" \
-    -nodetach -outform DER \
-    -out signature.p7s
+# === Step 5: Create bundle contents directory ===
+rm -rf bundle_contents
+mkdir bundle_contents
 
-# === FINAL PACKAGING ===
-echo "Packaging bundle into flat .raucb archive..."
-tar -cvf "$BUNDLE_NAME" rauc.conf manifest.raucm rootfs_systemA.squashfs signature.p7s
+cp rauc.conf manifest.raucm "$SQUASHFS_IMG" bundle_contents/
+openssl cms -sign -in manifest.raucm -signer certificate.pem -inkey private.key -nodetach -outform DER -out bundle_contents/signature.p7s
 
-# === DONE ===
-echo "RAUC bundle created at: $WORK_DIR/$BUNDLE_NAME"
+# === Step 6: Package the bundle ===
+tar -cvf "$BUNDLE_NAME" -C bundle_contents .
+
+# === Step 7: Verify ===
+rauc info --keyring=certificate.pem "$BUNDLE_NAME"
+
+echo "✅ RAUC bundle created successfully: $BUNDLE_NAME"
