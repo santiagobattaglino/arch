@@ -6,9 +6,9 @@ BUILD_DIR="/root/rauc_bundle_workspace"
 OUTPUT_DIR="/root/rauc_output"
 SRC_MOUNT="/mnt/source_systemA"
 SQUASHFS="$BUILD_DIR/rootfs_systemA.squashfs"
-BUNDLE="$OUTPUT_DIR/systemA_bundle_v1.0.0.raucb"
 CERT="$BUILD_DIR/certificate.pem"
 KEY="$BUILD_DIR/private.key"
+BUNDLE="$OUTPUT_DIR/systemA_bundle_v1.0.0.raucb"
 
 mkdir -p "$BUILD_DIR" "$OUTPUT_DIR"
 
@@ -19,7 +19,7 @@ if ! mountpoint -q "$SRC_MOUNT"; then
     mount -o ro /dev/sda2 "$SRC_MOUNT"
 fi
 
-# === Step 2: Recreate squashfs if it doesn't exist ===
+# === Step 2: Create squashfs only if it doesn't exist ===
 if [[ -s "$SQUASHFS" ]]; then
     echo "✅ SquashFS already exists, skipping creation: $SQUASHFS"
 else
@@ -30,13 +30,12 @@ else
         -no-exports \
         -no-xattrs \
         -no-fragments \
-        -noatime \
         -mkfs-time 0 \
         -sort /dev/null \
         -quiet
 fi
 
-# === Step 3: Validate squashfs ===
+# === Step 3: Validate squashfs exists ===
 if [[ ! -f "$SQUASHFS" || ! -s "$SQUASHFS" ]]; then
     echo "❌ squashfs missing or empty!"
     exit 1
@@ -52,11 +51,11 @@ if [[ ! -f "$CERT" || ! -f "$KEY" ]]; then
         -subj "/CN=RAUC Demo Certificate"
 fi
 
-# === Step 5: Compute hash and size ===
+# === Step 5: Compute digest and size ===
 SHA256=$(sha256sum "$(basename "$SQUASHFS")" | awk '{print $1}')
 SIZE=$(stat -c %s "$(basename "$SQUASHFS")")
 
-# === Step 6: Create manifest.raucm ===
+# === Step 6: Generate manifest.raucm ===
 echo "📄 Creating manifest.raucm..."
 cat > manifest.raucm <<EOF
 [update]
@@ -70,7 +69,6 @@ size=$SIZE
 EOF
 
 # === Step 7: Validate manifest digest ===
-echo "🔎 Verifying squashfs digest in manifest..."
 ACTUAL_HASH=$(sha256sum "$(basename "$SQUASHFS")" | awk '{print $1}')
 EXPECTED_HASH=$(grep sha256 manifest.raucm | cut -d= -f2 | tr -d ' ')
 if [[ "$ACTUAL_HASH" != "$EXPECTED_HASH" ]]; then
@@ -78,7 +76,7 @@ if [[ "$ACTUAL_HASH" != "$EXPECTED_HASH" ]]; then
     exit 1
 fi
 
-# === Step 8: Create rauc.conf (minimal) ===
+# === Step 8: Create rauc.conf ===
 echo "📄 Creating rauc.conf..."
 cat > rauc.conf <<EOF
 [rauc]
@@ -86,12 +84,15 @@ compatible=Arch-Linux
 version=1.0.0
 EOF
 
-# === Step 9: Create bundle ===
-echo "📦 Building bundle..."
-rauc bundle --cert="$CERT" --key="$KEY" "$BUILD_DIR" "$BUNDLE"
+# === Step 9: Clean any old bundle first ===
+rm -f "$BUNDLE"
 
-# === Step 10: Verify result ===
+# === Step 10: Create bundle ===
+echo "📦 Building bundle..."
+RAUC_LOG_LEVEL=debug rauc bundle --cert="$CERT" --key="$KEY" "$BUILD_DIR" "$BUNDLE"
+
+# === Step 11: Verify bundle ===
 echo "✅ Verifying final bundle..."
 rauc info --keyring="$CERT" "$BUNDLE"
 
-echo "🎉 Bundle built successfully at: $BUNDLE"
+echo "🎉 Bundle successfully created at: $BUNDLE"
