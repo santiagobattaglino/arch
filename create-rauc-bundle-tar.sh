@@ -73,6 +73,7 @@ openssl cms -sign \
     -signer "$CERT" \
     -inkey "$KEY" \
     -outform DER \
+    -certfile "$CERT" \
     -nosmimecap -nodetach \
     -out signature.p7s
 
@@ -97,7 +98,7 @@ fi
 echo "📦 Creating RAUC bundle..."
 cp rauc.conf manifest.raucm "$SQUASHFS_IMG" signature.p7s bundle_contents/
 cd bundle_contents
-tar -cf "../$BUNDLE_NAME" rauc.conf manifest.raucm "$SQUASHFS_IMG" signature.p7s
+tar --format=ustar -cf "../$BUNDLE_NAME" rauc.conf manifest.raucm "$SQUASHFS_IMG" signature.p7s
 cd ..
 
 # === Final RAUC verification ===
