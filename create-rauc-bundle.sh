@@ -67,6 +67,14 @@ sha256=$SHA256
 size=$SIZE
 EOF
 
+echo "🔍 Verifying squashfs hash and manifest match..."
+ACTUAL_HASH=$(sha256sum "$SQUASHFS" | awk '{print $1}')
+MANIFEST_HASH=$(grep sha256 manifest.raucm | cut -d= -f2)
+
+if [[ "$ACTUAL_HASH" != "$MANIFEST_HASH" ]]; then
+    error_exit "Mismatch between actual squashfs hash and manifest! Aborting."
+fi
+
 # === Step 7: Build RAUC bundle ===
 echo "🔨 Creating RAUC bundle..."
 rm -f "$OUTPUT_BUNDLE"  # Clean previous bundle if it exists
