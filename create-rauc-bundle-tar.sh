@@ -3,7 +3,7 @@ set -e
 
 # === CONFIG ===
 BUILD_DIR="/root/rauc_bundle_workspace"
-ROOTFS_SOURCE="/mnt/systemA"  # adjust if different
+ROOTFS_SOURCE="/mnt/systemA"  # Change this to your rootfs mount if different
 SQUASHFS="$BUILD_DIR/rootfs_systemA.squashfs"
 CERT="$BUILD_DIR/certificate.pem"
 KEY="$BUILD_DIR/private.key"
@@ -14,10 +14,10 @@ cd "$BUILD_DIR"
 
 # === Step 2: Create squashfs if not already present ===
 if [ -f "$SQUASHFS" ]; then
-    echo "🟡 SquashFS already exists, skipping creation: $SQUASHFS"
+    echo "🟡 SquashFS already exists. Skipping creation: $SQUASHFS"
 else
     echo "🟢 Creating SquashFS image..."
-    mksquashfs "$ROOTFS_SOURCE" "$SQUASHFS"
+    mksquashfs "$ROOTFS_SOURCE" "$SQUASHFS" -noappend -comp xz
 fi
 
 # === Step 3: Compute digest and size ===
@@ -38,7 +38,7 @@ sha256=$SHA256
 size=$SIZE
 EOF
 
-# === Step 5: Create rauc.conf ===
+# === Step 5: Create rauc.conf (static) ===
 echo "📄 Creating rauc.conf..."
 cat > rauc.conf <<EOF
 [system]
@@ -50,7 +50,7 @@ echo "🔏 Signing manifest..."
 openssl cms -sign -in manifest.raucm -outform DER -nosmimecap -nodetach -nocerts \
     -noattr -binary -signer "$CERT" -inkey "$KEY" -out signature.p7s
 
-# === Step 7: Build the .raucb bundle ===
+# === Step 7: Create bundle ===
 echo "📦 Creating bundle: $(basename "$BUNDLE")"
 tar -cf "$BUNDLE" \
     "$(basename "$SQUASHFS")" \
@@ -58,6 +58,6 @@ tar -cf "$BUNDLE" \
     rauc.conf \
     signature.p7s
 
-# === Step 8: Verify with RAUC ===
-echo "🔍 Verifying with rauc..."
+# === Step 8: Verify bundle ===
+echo "🔍 Verifying bundle with rauc..."
 rauc info --keyring="$CERT" "$BUNDLE"
