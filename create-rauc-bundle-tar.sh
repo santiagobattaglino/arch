@@ -1,95 +1,63 @@
 #!/bin/bash
-set -euo pipefail
+set -e
 
-# === CONFIGURATION ===
-WORK_DIR=~/rauc_bundle_workspace
-SOURCE_MOUNT=/mnt/source_systemA
-SOURCE_DEVICE=/dev/sda2
-SQUASHFS_IMG=rootfs_systemA.squashfs
-BUNDLE_NAME=systemA_bundle_v1.0.0.raucb
-KEY=private.key
-CERT=certificate.pem
+# === CONFIG ===
+BUILD_DIR="/root/rauc_bundle_workspace"
+ROOTFS_SOURCE="/mnt/systemA"  # adjust if different
+SQUASHFS="$BUILD_DIR/rootfs_systemA.squashfs"
+CERT="$BUILD_DIR/certificate.pem"
+KEY="$BUILD_DIR/private.key"
+BUNDLE="$BUILD_DIR/systemA_bundle_v1.0.0.raucb"
 
-# === PREPARE WORKDIR ===
-mkdir -p "$WORK_DIR"
-cd "$WORK_DIR"
+# === Step 1: Go to workspace ===
+cd "$BUILD_DIR"
 
-echo "🧼 Cleaning up previous build artifacts..."
-rm -rf bundle_contents "$BUNDLE_NAME"
-mkdir -p bundle_contents
-
-# === MOUNT SYSTEM A (READ-ONLY) ===
-if ! mountpoint -q "$SOURCE_MOUNT"; then
-    echo "🌀 Mounting $SOURCE_DEVICE to $SOURCE_MOUNT (read-only)..."
-    mkdir -p "$SOURCE_MOUNT"
-    mount -o ro "$SOURCE_DEVICE" "$SOURCE_MOUNT"
+# === Step 2: Create squashfs if not already present ===
+if [ -f "$SQUASHFS" ]; then
+    echo "🟡 SquashFS already exists, skipping creation: $SQUASHFS"
 else
-    echo "✅ $SOURCE_MOUNT is already mounted."
+    echo "🟢 Creating SquashFS image..."
+    mksquashfs "$ROOTFS_SOURCE" "$SQUASHFS"
 fi
 
-# === SQUASHFS IMAGE ===
-if [[ -s "$SQUASHFS_IMG" ]]; then
-    echo "✅ $SQUASHFS_IMG already exists and is non-empty. Skipping mksquashfs."
-else
-    echo "🌀 Creating SquashFS image..."
-    mksquashfs "$SOURCE_MOUNT" "$SQUASHFS_IMG" -comp xz -noappend
-fi
+# === Step 3: Compute digest and size ===
+echo "🔢 Calculating hash and size..."
+SHA256=$(sha256sum "$(basename "$SQUASHFS")" | awk '{print $1}')
+SIZE=$(stat -c %s "$(basename "$SQUASHFS")")
 
-# === KEY AND CERT ===
-if [[ ! -f "$KEY" || ! -f "$CERT" ]]; then
-    echo "🔐 Generating private key and certificate..."
-    openssl genpkey -algorithm RSA -out "$KEY"
-    openssl req -x509 -new -key "$KEY" -out "$CERT" -days 365 -subj "/CN=RAUC Test Certificate"
-else
-    echo "✅ Reusing existing key and certificate."
-fi
-
-# === rauc.conf ===
-cat > rauc.conf <<EOF
-[rauc]
-compatible=Arch-Linux
-version=1.0.0
-EOF
-
-# === Generate manifest.raucm ===
-SHA256=$(sha256sum "$SQUASHFS_IMG" | awk '{print $1}')
-SIZE=$(stat -c%s "$SQUASHFS_IMG")
-
+# === Step 4: Generate manifest.raucm ===
+echo "📄 Writing manifest.raucm..."
 cat > manifest.raucm <<EOF
 [update]
 compatible=Arch-Linux
 version=1.0.0
 
 [image.rootfs]
-filename=$SQUASHFS_IMG
+filename=$(basename "$SQUASHFS")
 sha256=$SHA256
 size=$SIZE
 EOF
 
-# === Sign the manifest ===
-echo "🔏 Signing manifest.raucm..."
-openssl cms -sign \
-    -in manifest.raucm \
-    -signer "$CERT" \
-    -inkey "$KEY" \
-    -outform DER \
-    -nosmimecap -nodetach -nocerts -noattr \
-    -out signature.p7s
+# === Step 5: Create rauc.conf ===
+echo "📄 Creating rauc.conf..."
+cat > rauc.conf <<EOF
+[system]
+compatible=Arch-Linux
+EOF
 
-# Check that signature is valid
-if [[ ! -s signature.p7s ]]; then
-    echo "❌ ERROR: signature.p7s is empty! Aborting."
-    exit 1
-fi
+# === Step 6: Sign manifest ===
+echo "🔏 Signing manifest..."
+openssl cms -sign -in manifest.raucm -outform DER -nosmimecap -nodetach -nocerts \
+    -noattr -binary -signer "$CERT" -inkey "$KEY" -out signature.p7s
 
-# === Package the RAUC bundle ===
-echo "📦 Creating RAUC bundle..."
-cp rauc.conf manifest.raucm "$SQUASHFS_IMG" signature.p7s bundle_contents/
-tar -cf systemA_bundle_v1.0.0.raucb rauc.conf manifest.raucm rootfs_systemA.squashfs
-tar -rf systemA_bundle_v1.0.0.raucb signature.p7s
+# === Step 7: Build the .raucb bundle ===
+echo "📦 Creating bundle: $(basename "$BUNDLE")"
+tar -cf "$BUNDLE" \
+    "$(basename "$SQUASHFS")" \
+    manifest.raucm \
+    rauc.conf \
+    signature.p7s
 
-# === Final check ===
-echo "🔍 Verifying bundle with rauc info..."
-rauc info --keyring="$CERT" "$BUNDLE_NAME"
-
-echo "✅ DONE: Bundle created at $WORK_DIR/$BUNDLE_NAME"
+# === Step 8: Verify with RAUC ===
+echo "🔍 Verifying with rauc..."
+rauc info --keyring="$CERT" "$BUNDLE"
