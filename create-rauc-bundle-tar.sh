@@ -1,38 +1,57 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
-# === CONFIG ===
+# === CONFIGURATION ===
 WORK_DIR=~/rauc_bundle_workspace
-MOUNT_POINT=/mnt/source_systemA
-SQUASHFS_IMG=$WORK_DIR/rootfs_systemA.squashfs
+SOURCE_MOUNT=/mnt/source_systemA
+SOURCE_DEVICE=/dev/sda2
+SQUASHFS_IMG=rootfs_systemA.squashfs
 BUNDLE_NAME=systemA_bundle_v1.0.0.raucb
+KEY=private.key
+CERT=certificate.pem
 
-# === CREATE WORKDIR ===
+# === PREPARE WORKDIR ===
 mkdir -p "$WORK_DIR"
 cd "$WORK_DIR"
 
-# === Step 1: Mount systemA rootfs if not mounted ===
-if ! mountpoint -q "$MOUNT_POINT"; then
-    mkdir -p "$MOUNT_POINT"
-    mount -o ro /dev/sda2 "$MOUNT_POINT"
+echo "🧼 Cleaning up previous build artifacts..."
+rm -rf bundle_contents "$BUNDLE_NAME"
+mkdir -p bundle_contents
+
+# === MOUNT SYSTEM A (READ-ONLY) ===
+if ! mountpoint -q "$SOURCE_MOUNT"; then
+    echo "🌀 Mounting $SOURCE_DEVICE to $SOURCE_MOUNT (read-only)..."
+    mkdir -p "$SOURCE_MOUNT"
+    mount -o ro "$SOURCE_DEVICE" "$SOURCE_MOUNT"
+else
+    echo "✅ $SOURCE_MOUNT is already mounted."
 fi
 
-# === Step 2: Create squashfs if it doesn't exist ===
+# === SQUASHFS IMAGE ===
 if [[ -s "$SQUASHFS_IMG" ]]; then
-    echo "✅ SquashFS image already exists. Skipping creation."
+    echo "✅ $SQUASHFS_IMG already exists and is non-empty. Skipping mksquashfs."
 else
     echo "🌀 Creating SquashFS image..."
-    mksquashfs "$MOUNT_POINT" "$SQUASHFS_IMG" -comp xz -noappend
+    mksquashfs "$SOURCE_MOUNT" "$SQUASHFS_IMG" -comp xz -noappend
 fi
 
-# === Step 3: Create keys (if needed) ===
-if [[ ! -f private.key || ! -f certificate.pem ]]; then
-    echo "🔐 Generating keys..."
-    openssl genpkey -algorithm RSA -out private.key
-    openssl req -x509 -new -key private.key -out certificate.pem -days 365 -subj "/CN=RAUC Test"
+# === KEY AND CERT ===
+if [[ ! -f "$KEY" || ! -f "$CERT" ]]; then
+    echo "🔐 Generating private key and certificate..."
+    openssl genpkey -algorithm RSA -out "$KEY"
+    openssl req -x509 -new -key "$KEY" -out "$CERT" -days 365 -subj "/CN=RAUC Test Certificate"
+else
+    echo "✅ Reusing existing key and certificate."
 fi
 
-# === Step 4: Generate manifest.raucm ===
+# === rauc.conf ===
+cat > rauc.conf <<EOF
+[rauc]
+compatible=Arch-Linux
+version=1.0.0
+EOF
+
+# === Generate manifest.raucm ===
 SHA256=$(sha256sum "$SQUASHFS_IMG" | awk '{print $1}')
 SIZE=$(stat -c%s "$SQUASHFS_IMG")
 
@@ -42,22 +61,34 @@ compatible=Arch-Linux
 version=1.0.0
 
 [image.rootfs]
-filename=$(basename "$SQUASHFS_IMG")
+filename=$SQUASHFS_IMG
 sha256=$SHA256
 size=$SIZE
 EOF
 
-# === Step 5: Create bundle contents directory ===
-rm -rf bundle_contents
-mkdir bundle_contents
+# === Sign the manifest ===
+echo "🔏 Signing manifest.raucm..."
+openssl cms -sign \
+    -in manifest.raucm \
+    -signer "$CERT" \
+    -inkey "$KEY" \
+    -outform DER \
+    -nosmimecap -nodetach -nocerts -noattr \
+    -out signature.p7s
 
-cp rauc.conf manifest.raucm "$SQUASHFS_IMG" bundle_contents/
-openssl cms -sign -in manifest.raucm -signer certificate.pem -inkey private.key -nodetach -outform DER -out bundle_contents/signature.p7s
+# Check that signature is valid
+if [[ ! -s signature.p7s ]]; then
+    echo "❌ ERROR: signature.p7s is empty! Aborting."
+    exit 1
+fi
 
-# === Step 6: Package the bundle ===
+# === Package the RAUC bundle ===
+echo "📦 Creating RAUC bundle..."
+cp rauc.conf manifest.raucm "$SQUASHFS_IMG" signature.p7s bundle_contents/
 tar -cvf "$BUNDLE_NAME" -C bundle_contents .
 
-# === Step 7: Verify ===
-rauc info --keyring=certificate.pem "$BUNDLE_NAME"
+# === Final check ===
+echo "🔍 Verifying bundle with rauc info..."
+rauc info --keyring="$CERT" "$BUNDLE_NAME"
 
-echo "✅ RAUC bundle created successfully: $BUNDLE_NAME"
+echo "✅ DONE: Bundle created at $WORK_DIR/$BUNDLE_NAME"
