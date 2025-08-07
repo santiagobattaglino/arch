@@ -85,7 +85,8 @@ fi
 # === Package the RAUC bundle ===
 echo "📦 Creating RAUC bundle..."
 cp rauc.conf manifest.raucm "$SQUASHFS_IMG" signature.p7s bundle_contents/
-tar -cvf "$BUNDLE_NAME" -C bundle_contents .
+tar -cf systemA_bundle_v1.0.0.raucb rauc.conf manifest.raucm rootfs_systemA.squashfs
+tar -rf systemA_bundle_v1.0.0.raucb signature.p7s
 
 # === Final check ===
 echo "🔍 Verifying bundle with rauc info..."
