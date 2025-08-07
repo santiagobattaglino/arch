@@ -6,11 +6,12 @@ BUILD_DIR="/root/rauc_bundle_workspace"
 OUTPUT_DIR="/root/rauc_output"
 SRC_MOUNT="/mnt/source_systemA"
 SQUASHFS="$BUILD_DIR/rootfs_systemA.squashfs"
+BUNDLE="$OUTPUT_DIR/systemA_bundle_v1.0.0.raucb"
 CERT="$BUILD_DIR/certificate.pem"
 KEY="$BUILD_DIR/private.key"
-BUNDLE="$OUTPUT_DIR/systemA_bundle_v1.0.0.raucb"
+WORKDIR="$BUILD_DIR/.rauc-workdir"
 
-mkdir -p "$BUILD_DIR" "$OUTPUT_DIR"
+mkdir -p "$BUILD_DIR" "$OUTPUT_DIR" "$WORKDIR"
 
 # === Step 1: Mount System A source if not mounted ===
 if ! mountpoint -q "$SRC_MOUNT"; then
@@ -43,19 +44,11 @@ fi
 
 cd "$BUILD_DIR"
 
-# === Step 4: Generate keys if missing ===
-if [[ ! -f "$CERT" || ! -f "$KEY" ]]; then
-    echo "🔐 Generating signing key and certificate..."
-    openssl genpkey -algorithm RSA -out "$KEY"
-    openssl req -x509 -new -key "$KEY" -out "$CERT" -days 365 \
-        -subj "/CN=RAUC Demo Certificate"
-fi
-
-# === Step 5: Compute digest and size ===
+# === Step 4: Compute digest and size ===
 SHA256=$(sha256sum "$(basename "$SQUASHFS")" | awk '{print $1}')
 SIZE=$(stat -c %s "$(basename "$SQUASHFS")")
 
-# === Step 6: Generate manifest.raucm ===
+# === Step 5: Generate manifest.raucm ===
 echo "📄 Creating manifest.raucm..."
 cat > manifest.raucm <<EOF
 [update]
@@ -68,7 +61,7 @@ sha256=$SHA256
 size=$SIZE
 EOF
 
-# === Step 7: Validate manifest digest ===
+# === Step 6: Validate manifest digest ===
 ACTUAL_HASH=$(sha256sum "$(basename "$SQUASHFS")" | awk '{print $1}')
 EXPECTED_HASH=$(grep sha256 manifest.raucm | cut -d= -f2 | tr -d ' ')
 if [[ "$ACTUAL_HASH" != "$EXPECTED_HASH" ]]; then
@@ -76,7 +69,7 @@ if [[ "$ACTUAL_HASH" != "$EXPECTED_HASH" ]]; then
     exit 1
 fi
 
-# === Step 8: Create rauc.conf ===
+# === Step 7: Create rauc.conf ===
 echo "📄 Creating rauc.conf..."
 cat > rauc.conf <<EOF
 [rauc]
@@ -84,15 +77,30 @@ compatible=Arch-Linux
 version=1.0.0
 EOF
 
-# === Step 9: Clean any old bundle first ===
+# === Step 8: Clean any old bundle first ===
 rm -f "$BUNDLE"
 
-# === Step 10: Create bundle ===
-echo "📦 Building bundle..."
-RAUC_LOG_LEVEL=debug rauc bundle --cert="$CERT" --key="$KEY" "$BUILD_DIR" "$BUNDLE"
+# === Step 9.5: Deep pre-bundle debug digest check ===
+echo "🔬 DEBUG: manifest + squashfs pre-bundle consistency check..."
+echo "--- manifest.raucm ---"
+cat manifest.raucm
+echo "--- sha256sum squashfs ---"
+sha256sum "$SQUASHFS"
+echo "--- stat squashfs ---"
+stat "$SQUASHFS"
+echo "--- hexdump squashfs head ---"
+hexdump -C "$SQUASHFS" | head -n 8
 
-# === Step 11: Verify bundle ===
-echo "✅ Verifying final bundle..."
+# === Step 10: Create signed bundle with workdir ===
+echo "🔐 Building signed bundle..."
+RAUC_LOG_LEVEL=debug rauc bundle \
+    --cert="$CERT" \
+    --key="$KEY" \
+    --workdir="$WORKDIR" \
+    "$BUILD_DIR" "$BUNDLE"
+
+# === Step 11: Verify signed bundle ===
+echo "✅ Verifying signed bundle..."
 rauc info --keyring="$CERT" "$BUNDLE"
 
-echo "🎉 Bundle successfully created at: $BUNDLE"
+echo "🎉 Signed bundle successfully created at: $BUNDLE"
