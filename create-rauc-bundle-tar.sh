@@ -1,63 +1,81 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
-# === CONFIG ===
-BUILD_DIR="/root/rauc_bundle_workspace"
-ROOTFS_SOURCE="/mnt/systemA"  # Change this to your rootfs mount if different
-SQUASHFS="$BUILD_DIR/rootfs_systemA.squashfs"
-CERT="$BUILD_DIR/certificate.pem"
-KEY="$BUILD_DIR/private.key"
-BUNDLE="$BUILD_DIR/systemA_bundle_v1.0.0.raucb"
+# === Configuration ===
+VERSION="1.0.0"
+COMPATIBLE="Arch-Linux"
+IMAGE="rootfs_systemA.squashfs"
+MANIFEST="manifest.raucm"
+SIGNATURE="signature.p7s"
+CERT="certificate.pem"
+KEY="private.key"
+BUNDLE="systemA_bundle_v${VERSION}.raucb"
 
-# === Step 1: Go to workspace ===
-cd "$BUILD_DIR"
+echo "=== RAUC Bundle Creation Script ==="
+echo "Version: $VERSION"
+echo "Compatible: $COMPATIBLE"
+echo "Bundle: $BUNDLE"
 
-# === Step 2: Create squashfs if not already present ===
-if [ -f "$SQUASHFS" ]; then
-    echo "🟡 SquashFS already exists. Skipping creation: $SQUASHFS"
+# === Step 1: Create squashfs (only if not present) ===
+if [ ! -f "$IMAGE" ]; then
+    echo "Creating squashfs image..."
+    mksquashfs rootfs "$IMAGE" -noappend
 else
-    echo "🟢 Creating SquashFS image..."
-    mksquashfs "$ROOTFS_SOURCE" "$SQUASHFS" -noappend -comp xz
+    echo "Squashfs already exists, skipping creation: $IMAGE"
 fi
 
-# === Step 3: Compute digest and size ===
-echo "🔢 Calculating hash and size..."
-SHA256=$(sha256sum "$(basename "$SQUASHFS")" | awk '{print $1}')
-SIZE=$(stat -c %s "$(basename "$SQUASHFS")")
+# === Step 2: Compute digest and size ===
+echo "Computing hash and size..."
+SHA256=$(sha256sum "$IMAGE" | awk '{print $1}')
+SIZE=$(stat -c %s "$IMAGE")
 
-# === Step 4: Generate manifest.raucm ===
-echo "📄 Writing manifest.raucm..."
-cat > manifest.raucm <<EOF
+# === Step 3: Create manifest.raucm ===
+echo "Creating manifest..."
+cat > "$MANIFEST" <<EOF
 [update]
-compatible=Arch-Linux
-version=1.0.0
+compatible=$COMPATIBLE
+version=$VERSION
 
 [image.rootfs]
-filename=$(basename "$SQUASHFS")
+filename=$IMAGE
 sha256=$SHA256
 size=$SIZE
 EOF
 
-# === Step 5: Create rauc.conf (static) ===
-echo "📄 Creating rauc.conf..."
+# === Step 4: Sign the manifest (includes cert) ===
+echo "Signing manifest..."
+openssl cms -sign \
+    -binary \
+    -noattr \
+    -in "$MANIFEST" \
+    -signer "$CERT" \
+    -inkey "$KEY" \
+    -outform DER \
+    -out "$SIGNATURE"
+
+# === Step 5: Verify the signature ===
+echo "Verifying signature..."
+openssl cms -verify \
+    -in "$SIGNATURE" \
+    -inform DER \
+    -content "$MANIFEST" \
+    -CAfile "$CERT" \
+    -no_attr_verify \
+    -no_content_verify
+
+# === Step 6: Create rauc.conf ===
+echo "Creating rauc.conf..."
 cat > rauc.conf <<EOF
 [system]
-compatible=Arch-Linux
+compatible=$COMPATIBLE
 EOF
 
-# === Step 6: Sign manifest ===
-echo "🔏 Signing manifest..."
-openssl cms -sign -in manifest.raucm -outform DER -nosmimecap -nodetach -nocerts \
-    -noattr -binary -signer "$CERT" -inkey "$KEY" -out signature.p7s
-
-# === Step 7: Create bundle ===
-echo "📦 Creating bundle: $(basename "$BUNDLE")"
-tar -cf "$BUNDLE" \
-    "$(basename "$SQUASHFS")" \
-    manifest.raucm \
+# === Step 7: Package the bundle ===
+echo "Packing bundle..."
+tar --format=ustar -cf "$BUNDLE" \
     rauc.conf \
-    signature.p7s
+    "$MANIFEST" \
+    "$IMAGE" \
+    "$SIGNATURE"
 
-# === Step 8: Verify bundle ===
-echo "🔍 Verifying bundle with rauc..."
-rauc info --keyring="$CERT" "$BUNDLE"
+echo "✅ Bundle created: $BUNDLE"
