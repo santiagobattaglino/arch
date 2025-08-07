@@ -1,81 +1,107 @@
 #!/bin/bash
 set -euo pipefail
 
-# === Configuration ===
-VERSION="1.0.0"
-COMPATIBLE="Arch-Linux"
-IMAGE="rootfs_systemA.squashfs"
-MANIFEST="manifest.raucm"
-SIGNATURE="signature.p7s"
-CERT="certificate.pem"
-KEY="private.key"
-BUNDLE="systemA_bundle_v${VERSION}.raucb"
+# === CONFIGURATION ===
+WORK_DIR=~/rauc_bundle_workspace
+SOURCE_MOUNT=/mnt/source_systemA
+SOURCE_DEVICE=/dev/sda2
+SQUASHFS_IMG=rootfs_systemA.squashfs
+BUNDLE_NAME=systemA_bundle_v1.0.0.raucb
+KEY=private.key
+CERT=certificate.pem
 
-echo "=== RAUC Bundle Creation Script ==="
-echo "Version: $VERSION"
-echo "Compatible: $COMPATIBLE"
-echo "Bundle: $BUNDLE"
+# === PREPARE WORKDIR ===
+mkdir -p "$WORK_DIR"
+cd "$WORK_DIR"
 
-# === Step 1: Create squashfs (only if not present) ===
-if [ ! -f "$IMAGE" ]; then
-    echo "Creating squashfs image..."
-    mksquashfs rootfs "$IMAGE" -noappend
+echo "🧼 Cleaning up previous build artifacts..."
+rm -rf bundle_contents "$BUNDLE_NAME"
+mkdir -p bundle_contents
+
+# === MOUNT SYSTEM A (READ-ONLY) ===
+if ! mountpoint -q "$SOURCE_MOUNT"; then
+    echo "🌀 Mounting $SOURCE_DEVICE to $SOURCE_MOUNT (read-only)..."
+    mkdir -p "$SOURCE_MOUNT"
+    mount -o ro "$SOURCE_DEVICE" "$SOURCE_MOUNT"
 else
-    echo "Squashfs already exists, skipping creation: $IMAGE"
+    echo "✅ $SOURCE_MOUNT is already mounted."
 fi
 
-# === Step 2: Compute digest and size ===
-echo "Computing hash and size..."
-SHA256=$(sha256sum "$IMAGE" | awk '{print $1}')
-SIZE=$(stat -c %s "$IMAGE")
+# === SQUASHFS IMAGE ===
+if [[ -s "$SQUASHFS_IMG" ]]; then
+    echo "✅ $SQUASHFS_IMG already exists and is non-empty. Skipping mksquashfs."
+else
+    echo "🌀 Creating SquashFS image..."
+    mksquashfs "$SOURCE_MOUNT" "$SQUASHFS_IMG" -comp xz -noappend
+fi
 
-# === Step 3: Create manifest.raucm ===
-echo "Creating manifest..."
-cat > "$MANIFEST" <<EOF
+# === KEY AND CERT ===
+if [[ ! -f "$KEY" || ! -f "$CERT" ]]; then
+    echo "🔐 Generating private key and certificate..."
+    openssl genpkey -algorithm RSA -out "$KEY"
+    openssl req -x509 -new -key "$KEY" -out "$CERT" -days 365 -subj "/CN=RAUC Test Certificate"
+else
+    echo "✅ Reusing existing key and certificate."
+fi
+
+# === rauc.conf ===
+cat > rauc.conf <<EOF
+[rauc]
+compatible=Arch-Linux
+version=1.0.0
+EOF
+
+# === Generate manifest.raucm ===
+SHA256=$(sha256sum "$SQUASHFS_IMG" | awk '{print $1}')
+SIZE=$(stat -c%s "$SQUASHFS_IMG")
+
+cat > manifest.raucm <<EOF
 [update]
-compatible=$COMPATIBLE
-version=$VERSION
+compatible=Arch-Linux
+version=1.0.0
 
 [image.rootfs]
-filename=$IMAGE
+filename=$SQUASHFS_IMG
 sha256=$SHA256
 size=$SIZE
 EOF
 
-# === Step 4: Sign the manifest (includes cert) ===
-echo "Signing manifest..."
+# === Sign the manifest (with cert and attributes) ===
+echo "🔏 Signing manifest.raucm..."
 openssl cms -sign \
-    -binary \
-    -noattr \
-    -in "$MANIFEST" \
+    -in manifest.raucm \
     -signer "$CERT" \
     -inkey "$KEY" \
     -outform DER \
-    -out "$SIGNATURE"
+    -nosmimecap -nodetach \
+    -out signature.p7s
 
-# === Step 5: Verify the signature ===
-echo "Verifying signature..."
+# === OpenSSL Verification Step ===
+echo "🔍 Verifying signature with OpenSSL..."
 openssl cms -verify \
-    -in "$SIGNATURE" \
+    -in signature.p7s \
     -inform DER \
-    -content "$MANIFEST" \
+    -content manifest.raucm \
     -CAfile "$CERT" \
     -no_attr_verify \
-    -no_content_verify
+    -no_content_verify > /dev/null
 
-# === Step 6: Create rauc.conf ===
-echo "Creating rauc.conf..."
-cat > rauc.conf <<EOF
-[system]
-compatible=$COMPATIBLE
-EOF
+if [[ $? -eq 0 ]]; then
+    echo "✅ OpenSSL signature verification successful."
+else
+    echo "❌ ERROR: OpenSSL signature verification failed!"
+    exit 1
+fi
 
-# === Step 7: Package the bundle ===
-echo "Packing bundle..."
-tar --format=ustar -cf "$BUNDLE" \
-    rauc.conf \
-    "$MANIFEST" \
-    "$IMAGE" \
-    "$SIGNATURE"
+# === Package the RAUC bundle ===
+echo "📦 Creating RAUC bundle..."
+cp rauc.conf manifest.raucm "$SQUASHFS_IMG" signature.p7s bundle_contents/
+cd bundle_contents
+tar -cf "../$BUNDLE_NAME" rauc.conf manifest.raucm "$SQUASHFS_IMG" signature.p7s
+cd ..
 
-echo "✅ Bundle created: $BUNDLE"
+# === Final RAUC verification ===
+echo "🔍 Verifying final RAUC bundle with rauc info..."
+rauc info --keyring="$CERT" "$BUNDLE_NAME"
+
+echo "✅ DONE: Bundle created and verified at $WORK_DIR/$BUNDLE_NAME"
