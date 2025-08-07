@@ -4,13 +4,15 @@ set -e
 
 # === CONFIGURATION ===
 BUILD_DIR="/root/rauc_bundle_workspace"
+OUTPUT_DIR="/root/rauc_bundle_workspace"
 SRC_MOUNT="/mnt/source_systemA"
 SQUASHFS="$BUILD_DIR/rootfs_systemA.squashfs"
-BUNDLE="$BUILD_DIR/systemA_bundle_v1.0.0.raucb"
+BUNDLE="$OUTPUT_DIR/systemA_bundle_v1.0.0.raucb"
 CERT="$BUILD_DIR/certificate.pem"
 KEY="$BUILD_DIR/private.key"
 
 mkdir -p "$BUILD_DIR"
+mkdir -p "$OUTPUT_DIR"
 
 # === Step 1: Mount System A source if not mounted ===
 if ! mountpoint -q "$SRC_MOUNT"; then
