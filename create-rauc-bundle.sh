@@ -84,10 +84,13 @@ rm -f "$BUNDLE"
 echo "🔬 DEBUG: manifest + squashfs pre-bundle consistency check..."
 echo "--- manifest.raucm ---"
 cat manifest.raucm
+
 echo "--- sha256sum squashfs ---"
 sha256sum "$SQUASHFS"
+
 echo "--- stat squashfs ---"
 stat "$SQUASHFS"
+
 echo "--- hexdump squashfs head ---"
 hexdump -C "$SQUASHFS" | head -n 8
 
