@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -euo pipefail
+set -e
 
 # === CONFIGURATION ===
 BUILD_DIR="/root/rauc_bundle_workspace"
@@ -10,39 +10,45 @@ SQUASHFS="$BUILD_DIR/rootfs_systemA.squashfs"
 BUNDLE="$OUTPUT_DIR/systemA_bundle_v1.0.0.raucb"
 CERT="$BUILD_DIR/certificate.pem"
 KEY="$BUILD_DIR/private.key"
-RECIPE="$BUILD_DIR/bundle.raucb"
 
 mkdir -p "$BUILD_DIR"
 mkdir -p "$OUTPUT_DIR"
 
-# === Step 1: Mount System A if not already ===
+# === Step 0: Create key + certificate if missing ===
+if [[ ! -f "$KEY" || ! -f "$CERT" ]]; then
+    echo "🔐 Generating new private key and self-signed certificate..."
+    openssl genrsa -out "$KEY" 2048
+    openssl req -new -x509 -key "$KEY" -out "$CERT" -days 3650 -subj "/O=RAUC Demo/OU=System A/CN=Arch-Linux"
+else
+    echo "✅ Signing key and certificate already exist."
+fi
+
+# === Step 1: Mount System A source if not mounted ===
 if ! mountpoint -q "$SRC_MOUNT"; then
     echo "🔗 Mounting /dev/sda2 to $SRC_MOUNT..."
     mkdir -p "$SRC_MOUNT"
     mount -o ro /dev/sda2 "$SRC_MOUNT"
 fi
 
-# === Step 2: Create squashfs only if not present ===
+# === Step 2: Generate squashfs only if not present ===
 if [[ -s "$SQUASHFS" ]]; then
     echo "✅ SquashFS already exists, skipping creation: $SQUASHFS"
 else
     echo "📦 Creating squashfs image from $SRC_MOUNT..."
-    mksquashfs "$SRC_MOUNT" "$SQUASHFS" -comp xz -noappend -all-root -no-xattrs -noatime
-    sync
+    mksquashfs "$SRC_MOUNT" "$SQUASHFS" -comp xz -noappend -no-xattrs -noatime -all-root -quiet
 fi
 
-# === Step 3: Verify squashfs exists ===
+# === Step 3: Verify squashfs file ===
 if [[ ! -f "$SQUASHFS" || ! -s "$SQUASHFS" ]]; then
     echo "❌ Error: squashfs not found or empty at $SQUASHFS"
     exit 1
 fi
 
-# === Step 4: Recalculate hash and size ===
+# === Step 4: Generate manifest.raucm ===
 cd "$BUILD_DIR"
 SHA256=$(sha256sum "$(basename "$SQUASHFS")" | awk '{print $1}')
 SIZE=$(stat -c %s "$(basename "$SQUASHFS")")
 
-# === Step 5: Write manifest.raucm ===
 echo "📄 Generating manifest.raucm..."
 cat > manifest.raucm <<EOF
 [update]
@@ -55,8 +61,8 @@ sha256=$SHA256
 size=$SIZE
 EOF
 
-# === Step 6: Sanity check on manifest digest ===
-echo "🧪 Verifying manifest digest..."
+# === Step 5: Verify manifest hash matches squashfs ===
+echo "🧪 Verifying manifest against squashfs..."
 ACTUAL_HASH=$(sha256sum "$(basename "$SQUASHFS")" | awk '{print $1}')
 EXPECTED_HASH=$(grep sha256 manifest.raucm | cut -d= -f2)
 
@@ -65,7 +71,7 @@ if [[ "$ACTUAL_HASH" != "$EXPECTED_HASH" ]]; then
     exit 1
 fi
 
-# === Step 7: Create rauc.conf ===
+# === Step 6: Create rauc.conf (required) ===
 echo "📄 Creating rauc.conf..."
 cat > rauc.conf <<EOF
 [rauc]
@@ -73,12 +79,12 @@ compatible=Arch-Linux
 version=1.0.0
 EOF
 
-# === Step 8: Create the bundle using rauc ===
-echo "🔐 Creating bundle with rauc..."
+# === Step 7: Bundle creation ===
+echo "🔐 Signing and bundling..."
 rauc bundle --cert="$CERT" --key="$KEY" "$BUILD_DIR" "$BUNDLE"
 
-# === Step 9: Verify created bundle ===
+# === Step 8: Verify final bundle ===
 echo "✅ Verifying created bundle..."
 rauc info --keyring="$CERT" "$BUNDLE"
 
-echo "🎉 Bundle successfully created: $BUNDLE"
+echo "🎉 RAUC bundle created successfully: $BUNDLE"
