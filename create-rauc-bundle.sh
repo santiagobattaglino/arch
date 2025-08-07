@@ -56,12 +56,13 @@ EOF
 # Optional: strip carriage returns just in case
 sed -i 's/\r$//' "$RECIPE"
 
-# === Build bundle ===
-echo "🔨 Running rauc bundle..."
-rauc bundle "$RECIPE"
+# === Build the RAUC bundle ===
+echo "🔨 Building RAUC bundle..."
+cd "$BUILD_DIR"
+rauc bundle . "$RECIPE"
 
-# === Verify bundle ===
-echo "🔍 Verifying bundle..."
+# === Verify the bundle ===
+echo "🔍 Verifying RAUC bundle..."
 rauc info --keyring="$CERT" "$BUNDLE_NAME"
 
 echo ""
