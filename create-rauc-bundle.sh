@@ -56,10 +56,12 @@ EOF
 # Optional: strip carriage returns just in case
 sed -i 's/\r$//' "$RECIPE"
 
-# === Build the RAUC bundle ===
-echo "🔨 Building RAUC bundle..."
-cd "$BUILD_DIR"
-rauc bundle . "$RECIPE"
+echo "🔨 Creating RAUC bundle..."
+mkdir -p "$OUTPUT_DIR"
+rauc bundle --cert=certificate.pem \
+            --key=private.key \
+            "$BUILD_DIR" \
+            "$OUTPUT_DIR/$BUNDLE_NAME" || error_exit "RAUC bundle creation failed"
 
 # === Verify the bundle ===
 echo "🔍 Verifying RAUC bundle..."
