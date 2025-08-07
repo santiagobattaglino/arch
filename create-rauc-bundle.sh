@@ -1,65 +1,84 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
-# === CONFIG ===
-BUILD_DIR=~/rauc_bundle_workspace
-BUNDLE_NAME="systemA_bundle_v1.0.0.raucb"
+# === Configuration ===
+BUILD_DIR="/root/rauc_bundle_workspace"
 SRC_PARTITION="/dev/sda2"
 MNT_POINT="/mnt/source_systemA"
-KEY="private.key"
-CERT="certificate.pem"
-RECIPE="bundle.raucb"
 SQUASHFS="rootfs_systemA.squashfs"
-SQUASHFS_PATH="$BUILD_DIR/$SQUASHFS"
+CERT="certificate.pem"
+KEY="private.key"
+RECIPE="bundle.raucb"
+BUNDLE_NAME="systemA_bundle_v1.0.0.raucb"
 
-# === CLEANUP (WITHOUT TOUCHING SQUASHFS) ===
-echo "🔄 Preparing workspace..."
-umount "$MNT_POINT" 2>/dev/null || true
+SQUASHFS_PATH="$BUILD_DIR/$SQUASHFS"
+CERT_PATH="$BUILD_DIR/$CERT"
+KEY_PATH="$BUILD_DIR/$KEY"
+RECIPE_PATH="$BUILD_DIR/$RECIPE"
+BUNDLE_PATH="$BUILD_DIR/$BUNDLE_NAME"
+
+# === Prepare workspace ===
+echo "🔧 Preparing workspace..."
 mkdir -p "$BUILD_DIR"
 mkdir -p "$MNT_POINT"
 
-# === CREATE SQUASHFS ONLY IF MISSING ===
+# === Validate that required files exist ===
+for FILE in "$CERT" "$KEY"; do
+    if [[ ! -f "$FILE" ]]; then
+        echo "❌ Missing required file: $FILE"
+        exit 1
+    fi
+done
+
+# === Create squashfs only if not present ===
 if [[ -s "$SQUASHFS_PATH" ]]; then
-    echo "✅ Existing SquashFS found: $SQUASHFS_PATH"
-    echo "⏩ Skipping mksquashfs."
+    echo "✅ SquashFS already exists at $SQUASHFS_PATH"
 else
-    echo "📦 Creating squashfs image from $SRC_PARTITION..."
+    echo "📦 Creating SquashFS from $SRC_PARTITION..."
     mount -o ro "$SRC_PARTITION" "$MNT_POINT"
     mksquashfs "$MNT_POINT" "$SQUASHFS_PATH" -comp xz
     umount "$MNT_POINT"
 fi
 
-# === COPY CERT/KEY TO WORKSPACE ===
-echo "🔐 Copying certificate and key..."
-cp "$KEY" "$CERT" "$BUILD_DIR/"
+# === Copy certs and key to build dir ===
+cp "$CERT" "$CERT_PATH"
+cp "$KEY" "$KEY_PATH"
 
-# === CREATE BUNDLE RECIPE ===
-echo "📝 Writing RAUC bundle recipe..."
+# === Clean up old bundle if exists ===
+if [[ -f "$BUNDLE_PATH" ]]; then
+    echo "🗑️ Removing existing bundle: $BUNDLE_PATH"
+    rm -f "$BUNDLE_PATH"
+fi
 
-BUNDLE_OUT="$(realpath "$BUILD_DIR/$BUNDLE_NAME")"
-
-cat > "$BUILD_DIR/$RECIPE" <<EOF
+# === Create bundle recipe ===
+echo "📝 Writing bundle recipe to $RECIPE_PATH..."
+cat > "$RECIPE_PATH" <<EOF
 [bundle]
 version=1.0.0
 compatible=Arch-Linux
 cert=$CERT
 key=$KEY
-output=$BUNDLE_OUT
+output=$BUNDLE_PATH
 
 [image.rootfs]
 filename=$SQUASHFS
 EOF
 
-# === BUILD THE BUNDLE ===
-echo "🛠️ Building RAUC bundle..."
+# === Build the RAUC bundle ===
+echo "🔨 Building RAUC bundle..."
 cd "$BUILD_DIR"
 rauc bundle "$RECIPE"
 
-# === VERIFY THE BUNDLE ===
-echo "🔍 Verifying RAUC bundle..."
-rauc info --keyring="$CERT" "$BUNDLE_NAME"
+# === Verify bundle was created ===
+if [[ ! -f "$BUNDLE_PATH" ]]; then
+    echo "❌ ERROR: Bundle was not created."
+    exit 1
+fi
 
-# === DONE ===
+# === Verify bundle contents ===
+echo "🔍 Verifying RAUC bundle..."
+rauc info --keyring="$CERT_PATH" "$BUNDLE_NAME"
+
 echo ""
-echo "✅ RAUC bundle created and verified successfully!"
-echo "   → Location: $BUILD_DIR/$BUNDLE_NAME"
+echo "✅ Success! Bundle created and verified:"
+echo "   → $BUNDLE_PATH"
