@@ -96,10 +96,14 @@ fi
 
 # === Package the RAUC bundle ===
 echo "📦 Creating RAUC bundle..."
-cp rauc.conf manifest.raucm "$SQUASHFS_IMG" signature.p7s bundle_contents/
+cp rauc.conf manifest.raucm "$SQUASHFS_IMG" bundle_contents/
 cd bundle_contents
-tar --format=ustar -cf "../$BUNDLE_NAME" rauc.conf manifest.raucm "$SQUASHFS_IMG" signature.p7s
+tar --format=ustar -cf "../$BUNDLE_NAME" manifest.raucm rauc.conf "$SQUASHFS_IMG"
+# append the signature last — explicitly
+tar --format=ustar -rf "../$BUNDLE_NAME" signature.p7s
 cd ..
+
+tar -tvf "$BUNDLE_NAME"
 
 # === Final RAUC verification ===
 echo "🔍 Verifying final RAUC bundle with rauc info..."
