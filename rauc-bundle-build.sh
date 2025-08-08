@@ -104,7 +104,6 @@ compatible=Arch-Linux
 version=1.0.0
 
 [image.rootfs]
-class=rootfs
 filename=$IMG_NAME
 EOF
 
