@@ -37,7 +37,7 @@ echo "🔄 Mounting ext4 image to copy contents..."
 mount -o loop "$IMG_PATH" "$IMAGE_MOUNT"
 
 echo "📥 Copying files from System A into ext4 image using rsync..."
-rsync -aHAXx --numeric-ids "$SOURCE_MOUNT"/ "$IMAGE_MOUNT"/
+rsync -aHAXx --numeric-ids --info=progress2 "$SOURCE_MOUNT"/ "$IMAGE_MOUNT"/
 
 echo "🔽 Unmounting ext4 image..."
 umount "$IMAGE_MOUNT"
